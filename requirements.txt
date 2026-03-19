@@ -1,0 +1,21 @@
+# AI Music Grading System — Python dependencies
+# Install: pip install -r requirements.txt
+
+# Web server
+flask==3.0.3
+flask-cors==4.0.1
+
+# Audio processing
+librosa==0.10.2
+soundfile==0.12.1
+
+# Data & ML
+numpy==1.26.4
+pandas==2.2.2
+scikit-learn==1.5.1
+joblib==1.4.2
+
+# ── SQL standby (uncomment whichever backend you activate) ──
+# snowflake-connector-python==3.10.1
+# psycopg2-binary==2.9.9
+# sqlite3 is built into Python — no install needed

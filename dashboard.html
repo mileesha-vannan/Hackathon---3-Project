@@ -1,0 +1,1109 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8"/>
+<meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+<title>AI Music Grading System</title>
+<link href="https://fonts.googleapis.com/css2?family=Syne:wght@400;600;700;800&family=JetBrains+Mono:wght@300;400;500&display=swap" rel="stylesheet"/>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.0/chart.umd.min.js"></script>
+<style>
+  :root {
+    --bg:        #0b0c0f;
+    --surface:   #111318;
+    --card:      #16181f;
+    --border:    #1e2130;
+    --amber:     #f5a623;
+    --amber2:    #ff7c2a;
+    --teal:      #00c9a7;
+    --rose:      #ff4f6d;
+    --blue:      #4f8fff;
+    --text:      #e8eaf0;
+    --muted:     #5a607a;
+    --mono:      'JetBrains Mono', monospace;
+    --sans:      'Syne', sans-serif;
+    --radius:    10px;
+    --glow:      0 0 24px rgba(245,166,35,0.15);
+  }
+
+  *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+  body {
+    background: var(--bg);
+    color: var(--text);
+    font-family: var(--sans);
+    min-height: 100vh;
+    overflow-x: hidden;
+  }
+
+  /* ── Noise overlay ── */
+  body::before {
+    content: '';
+    position: fixed; inset: 0;
+    background-image: url("data:image/svg+xml,%3Csvg viewBox='0 0 200 200' xmlns='http://www.w3.org/2000/svg'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.85' numOctaves='4' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)' opacity='0.04'/%3E%3C/svg%3E");
+    pointer-events: none; z-index: 0; opacity: .5;
+  }
+
+  /* ── Scrollbar ── */
+  ::-webkit-scrollbar { width: 4px; }
+  ::-webkit-scrollbar-track { background: var(--bg); }
+  ::-webkit-scrollbar-thumb { background: var(--border); border-radius: 4px; }
+
+  /* ══════════════ LAYOUT ══════════════ */
+  .shell {
+    display: grid;
+    grid-template-columns: 220px 1fr;
+    grid-template-rows: 60px 1fr;
+    min-height: 100vh;
+    position: relative; z-index: 1;
+  }
+
+  /* ── Top bar ── */
+  header {
+    grid-column: 1/-1;
+    display: flex; align-items: center; gap: 16px;
+    padding: 0 28px;
+    background: var(--surface);
+    border-bottom: 1px solid var(--border);
+  }
+  .logo-mark {
+    width: 32px; height: 32px;
+    background: linear-gradient(135deg, var(--amber), var(--amber2));
+    border-radius: 8px;
+    display: flex; align-items: center; justify-content: center;
+    font-size: 16px;
+  }
+  .logo-text { font-size: 15px; font-weight: 700; letter-spacing: .03em; }
+  .logo-sub  { font-size: 11px; color: var(--muted); font-family: var(--mono); }
+  .header-right { margin-left: auto; display: flex; align-items: center; gap: 12px; }
+  .status-pill {
+    font-family: var(--mono); font-size: 11px;
+    padding: 4px 10px; border-radius: 20px;
+    background: rgba(0,201,167,.12); color: var(--teal);
+    border: 1px solid rgba(0,201,167,.25);
+    display: flex; align-items: center; gap: 6px;
+  }
+  .status-pill.cold { background: rgba(255,79,109,.12); color: var(--rose); border-color: rgba(255,79,109,.25); }
+  .status-dot { width: 7px; height: 7px; border-radius: 50%; background: currentColor; animation: pulse 2s infinite; }
+  @keyframes pulse { 0%,100%{opacity:1} 50%{opacity:.4} }
+  .db-badge {
+    font-family: var(--mono); font-size: 10px;
+    padding: 3px 8px; border-radius: 4px;
+    background: rgba(79,143,255,.1); color: var(--blue);
+    border: 1px solid rgba(79,143,255,.2);
+  }
+
+  /* ── Sidebar ── */
+  nav {
+    background: var(--surface);
+    border-right: 1px solid var(--border);
+    padding: 20px 0;
+    display: flex; flex-direction: column; gap: 2px;
+  }
+  .nav-section { padding: 8px 16px 4px; font-size: 10px; color: var(--muted); letter-spacing: .1em; text-transform: uppercase; font-family: var(--mono); }
+  .nav-item {
+    display: flex; align-items: center; gap: 10px;
+    padding: 10px 18px; margin: 0 8px;
+    border-radius: 8px; cursor: pointer;
+    font-size: 13px; font-weight: 600;
+    color: var(--muted); transition: all .15s;
+    border: 1px solid transparent;
+  }
+  .nav-item:hover { color: var(--text); background: var(--card); }
+  .nav-item.active {
+    color: var(--amber); background: rgba(245,166,35,.08);
+    border-color: rgba(245,166,35,.2);
+  }
+  .nav-icon { font-size: 15px; width: 18px; text-align: center; }
+  .nav-badge {
+    margin-left: auto; font-family: var(--mono); font-size: 10px;
+    background: var(--border); color: var(--muted);
+    padding: 1px 6px; border-radius: 10px;
+  }
+
+  /* ── Main content ── */
+  main { padding: 28px; overflow-y: auto; display: flex; flex-direction: column; gap: 24px; }
+
+  /* ── Page sections ── */
+  .page { display: none; flex-direction: column; gap: 24px; }
+  .page.active { display: flex; animation: fadeIn .2s ease; }
+  @keyframes fadeIn { from{opacity:0;transform:translateY(6px)} to{opacity:1;transform:none} }
+
+  /* ── Section header ── */
+  .section-head { display: flex; align-items: baseline; gap: 10px; margin-bottom: 4px; }
+  .section-title { font-size: 20px; font-weight: 800; }
+  .section-sub   { font-size: 13px; color: var(--muted); font-family: var(--mono); }
+
+  /* ── Grid helpers ── */
+  .grid-3 { display: grid; grid-template-columns: repeat(3,1fr); gap: 16px; }
+  .grid-2 { display: grid; grid-template-columns: repeat(2,1fr); gap: 16px; }
+  @media(max-width:900px){ .grid-3{grid-template-columns:1fr 1fr} .grid-2{grid-template-columns:1fr} }
+
+  /* ── Card ── */
+  .card {
+    background: var(--card);
+    border: 1px solid var(--border);
+    border-radius: var(--radius);
+    padding: 20px;
+    position: relative; overflow: hidden;
+  }
+  .card::after {
+    content:''; position:absolute; inset:0; pointer-events:none;
+    background: linear-gradient(135deg, rgba(255,255,255,.015) 0%, transparent 60%);
+  }
+  .card-label { font-size: 11px; color: var(--muted); font-family: var(--mono); letter-spacing: .08em; text-transform: uppercase; margin-bottom: 8px; }
+  .card-value { font-size: 32px; font-weight: 800; line-height: 1; }
+  .card-sub   { font-size: 12px; color: var(--muted); font-family: var(--mono); margin-top: 6px; }
+  .card-accent-amber::before { content:''; position:absolute; top:0; left:0; right:0; height:2px; background: linear-gradient(90deg,var(--amber),var(--amber2)); }
+  .card-accent-teal::before  { content:''; position:absolute; top:0; left:0; right:0; height:2px; background: var(--teal); }
+  .card-accent-rose::before  { content:''; position:absolute; top:0; left:0; right:0; height:2px; background: var(--rose); }
+  .card-accent-blue::before  { content:''; position:absolute; top:0; left:0; right:0; height:2px; background: var(--blue); }
+
+  /* ── Chart containers ── */
+  .chart-wrap { position: relative; height: 220px; }
+  .chart-wrap-tall { position: relative; height: 280px; }
+  .chart-title { font-size: 13px; font-weight: 700; margin-bottom: 14px; color: var(--text); }
+
+  /* ── Upload zone ── */
+  .upload-zone {
+    border: 2px dashed var(--border);
+    border-radius: 12px;
+    padding: 40px 20px;
+    text-align: center;
+    cursor: pointer;
+    transition: all .2s;
+    background: rgba(245,166,35,.02);
+  }
+  .upload-zone:hover, .upload-zone.drag { border-color: var(--amber); background: rgba(245,166,35,.05); }
+  .upload-zone.drag { box-shadow: var(--glow); }
+  .upload-icon { font-size: 40px; margin-bottom: 12px; }
+  .upload-text { font-size: 15px; font-weight: 700; margin-bottom: 6px; }
+  .upload-hint { font-size: 12px; color: var(--muted); font-family: var(--mono); }
+  #file-input { display: none; }
+
+  /* ── Score slider ── */
+  .score-panel {
+    background: var(--surface); border: 1px solid var(--border);
+    border-radius: 12px; padding: 24px;
+    display: none; flex-direction: column; gap: 16px;
+  }
+  .score-panel.visible { display: flex; animation: fadeIn .2s; }
+  .score-file { font-family: var(--mono); font-size: 12px; color: var(--muted); word-break: break-all; }
+  .score-label { font-size: 13px; font-weight: 600; color: var(--muted); }
+  .score-value { font-size: 48px; font-weight: 800; color: var(--amber); font-family: var(--mono); text-align: center; }
+  .score-sub   { font-size: 11px; color: var(--muted); font-family: var(--mono); text-align: center; }
+  input[type=range] {
+    -webkit-appearance: none; width: 100%; height: 4px;
+    background: linear-gradient(90deg, var(--amber) var(--pct,50%), var(--border) var(--pct,50%));
+    border-radius: 4px; cursor: pointer;
+  }
+  input[type=range]::-webkit-slider-thumb {
+    -webkit-appearance:none; width:20px; height:20px;
+    border-radius:50%; background: var(--amber);
+    border: 3px solid var(--bg); box-shadow: 0 0 10px rgba(245,166,35,.5);
+    cursor: pointer;
+  }
+  .ai-prediction-badge {
+    background: rgba(79,143,255,.1); border: 1px solid rgba(79,143,255,.25);
+    border-radius: 8px; padding: 12px 16px;
+    display: flex; align-items: center; justify-content: space-between;
+  }
+  .ai-pred-label { font-size: 12px; color: var(--blue); font-family: var(--mono); }
+  .ai-pred-val   { font-size: 22px; font-weight: 800; color: var(--blue); font-family: var(--mono); }
+  .btn-row { display: flex; gap: 10px; }
+  .btn {
+    flex: 1; padding: 12px; border-radius: 8px; border: none;
+    font-family: var(--sans); font-size: 13px; font-weight: 700;
+    cursor: pointer; transition: all .15s;
+  }
+  .btn-primary { background: var(--amber); color: #000; }
+  .btn-primary:hover { background: var(--amber2); transform: translateY(-1px); }
+  .btn-ghost { background: var(--border); color: var(--text); }
+  .btn-ghost:hover { background: #2a2e40; }
+  .btn:disabled { opacity: .4; cursor: not-allowed; transform: none !important; }
+
+  /* ── Cold-start progress ── */
+  .cold-bar {
+    height: 6px; background: var(--border); border-radius: 4px; overflow: hidden;
+    margin-top: 8px;
+  }
+  .cold-fill {
+    height: 100%; border-radius: 4px;
+    background: linear-gradient(90deg, var(--amber), var(--amber2));
+    transition: width .4s ease;
+  }
+
+  /* ── Model comparison table ── */
+  .model-table { width: 100%; border-collapse: collapse; font-size: 13px; }
+  .model-table th {
+    font-family: var(--mono); font-size: 10px; color: var(--muted);
+    text-transform: uppercase; letter-spacing: .08em;
+    padding: 8px 12px; text-align: left;
+    border-bottom: 1px solid var(--border);
+  }
+  .model-table td { padding: 10px 12px; border-bottom: 1px solid rgba(30,33,48,.6); }
+  .model-table tr:last-child td { border-bottom: none; }
+  .model-table tr.best td { background: rgba(245,166,35,.04); }
+  .model-name { font-weight: 700; }
+  .badge-best {
+    display: inline-block; font-size: 9px; font-family: var(--mono);
+    background: rgba(245,166,35,.15); color: var(--amber);
+    border: 1px solid rgba(245,166,35,.3); border-radius: 4px;
+    padding: 1px 6px; margin-left: 6px; vertical-align: middle;
+  }
+  .badge-fail {
+    display: inline-block; font-size: 9px; font-family: var(--mono);
+    background: rgba(255,79,109,.1); color: var(--rose);
+    border: 1px solid rgba(255,79,109,.25); border-radius: 4px;
+    padding: 1px 6px; margin-left: 6px;
+  }
+  .r2-bar-wrap { display: flex; align-items: center; gap: 8px; }
+  .r2-bar { height: 4px; border-radius: 2px; background: var(--border); flex: 1; max-width: 80px; overflow: hidden; }
+  .r2-fill { height: 100%; border-radius: 2px; background: var(--teal); transition: width .6s ease; }
+  .r2-val { font-family: var(--mono); font-size: 12px; min-width: 52px; }
+
+  /* ── History table ── */
+  .history-table { width: 100%; border-collapse: collapse; font-size: 12px; }
+  .history-table th {
+    font-family: var(--mono); font-size: 10px; color: var(--muted);
+    text-transform: uppercase; letter-spacing: .08em;
+    padding: 8px 10px; text-align: left;
+    border-bottom: 1px solid var(--border); position: sticky; top: 0; background: var(--card);
+  }
+  .history-table td { padding: 9px 10px; border-bottom: 1px solid rgba(30,33,48,.5); font-family: var(--mono); }
+  .history-table tr:hover td { background: rgba(255,255,255,.02); }
+  .src-human   { color: var(--amber); }
+  .src-ai      { color: var(--teal); }
+  .src-corrected { color: var(--rose); }
+  .score-num { font-weight: 600; }
+  .delta { font-size: 11px; }
+  .delta.pos { color: var(--teal); }
+  .delta.neg { color: var(--rose); }
+  .history-scroll { max-height: 360px; overflow-y: auto; }
+
+  /* ── Toast ── */
+  #toast {
+    position: fixed; bottom: 24px; right: 24px;
+    background: var(--card); border: 1px solid var(--border);
+    border-radius: 10px; padding: 14px 20px;
+    font-size: 13px; font-family: var(--mono);
+    box-shadow: 0 8px 32px rgba(0,0,0,.4);
+    transform: translateY(60px); opacity: 0;
+    transition: all .25s; z-index: 999;
+    max-width: 340px;
+  }
+  #toast.show { transform: none; opacity: 1; }
+  #toast.success { border-color: var(--teal); color: var(--teal); }
+  #toast.error   { border-color: var(--rose); color: var(--rose); }
+  #toast.info    { border-color: var(--blue); color: var(--blue); }
+
+  /* ── Loading spinner ── */
+  .spinner {
+    width: 20px; height: 20px; border-radius: 50%;
+    border: 2px solid var(--border); border-top-color: var(--amber);
+    animation: spin .6s linear infinite; display: inline-block;
+  }
+  @keyframes spin { to { transform: rotate(360deg); } }
+
+  /* ── Refresh button ── */
+  .refresh-btn {
+    background: none; border: 1px solid var(--border);
+    color: var(--muted); border-radius: 6px;
+    padding: 6px 12px; font-family: var(--mono); font-size: 11px;
+    cursor: pointer; transition: all .15s; margin-left: auto;
+  }
+  .refresh-btn:hover { border-color: var(--amber); color: var(--amber); }
+
+  /* ── Empty state ── */
+  .empty { text-align: center; padding: 40px 20px; color: var(--muted); font-family: var(--mono); font-size: 13px; }
+  .empty-icon { font-size: 32px; margin-bottom: 10px; }
+
+  /* ── Retrain banner ── */
+  .retrain-banner {
+    background: rgba(245,166,35,.07); border: 1px solid rgba(245,166,35,.2);
+    border-radius: 8px; padding: 12px 16px;
+    display: flex; align-items: center; justify-content: space-between; gap: 12px;
+    font-size: 13px;
+  }
+  .retrain-banner span { color: var(--amber); font-weight: 600; }
+
+  /* ── Feature readout ── */
+  .feature-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(180px,1fr)); gap: 8px; }
+  .feature-item {
+    background: var(--surface); border: 1px solid var(--border);
+    border-radius: 6px; padding: 8px 12px;
+    display: flex; justify-content: space-between; align-items: baseline;
+    font-family: var(--mono); font-size: 11px;
+  }
+  .feature-key { color: var(--muted); }
+  .feature-val { color: var(--text); font-weight: 500; }
+</style>
+</head>
+<body>
+
+<div class="shell">
+  <!-- ══ HEADER ══ -->
+  <header>
+    <div class="logo-mark">🎵</div>
+    <div>
+      <div class="logo-text">Music Grading AI</div>
+      <div class="logo-sub">self-improving audio intelligence</div>
+    </div>
+    <div class="header-right">
+      <div id="header-status" class="status-pill cold">
+        <span class="status-dot"></span>
+        <span id="status-text">connecting…</span>
+      </div>
+      <div id="db-badge" class="db-badge" style="display:none">DB: —</div>
+    </div>
+  </header>
+
+  <!-- ══ NAV ══ -->
+  <nav>
+    <div class="nav-section">Core</div>
+    <div class="nav-item active" data-page="grade">
+      <span class="nav-icon">🎧</span> Grade
+    </div>
+    <div class="nav-item" data-page="overview">
+      <span class="nav-icon">📊</span> Overview
+    </div>
+    <div class="nav-section">Models</div>
+    <div class="nav-item" data-page="models">
+      <span class="nav-icon">🤖</span> Models
+      <span class="nav-badge" id="nav-model-name">—</span>
+    </div>
+    <div class="nav-section">Data</div>
+    <div class="nav-item" data-page="history">
+      <span class="nav-icon">🕘</span> History
+      <span class="nav-badge" id="nav-history-count">—</span>
+    </div>
+    <div class="nav-item" data-page="settings">
+      <span class="nav-icon">⚙️</span> Settings
+    </div>
+  </nav>
+
+  <!-- ══ MAIN ══ -->
+  <main>
+
+    <!-- ── GRADE PAGE ── -->
+    <div class="page active" id="page-grade">
+      <div class="section-head">
+        <div class="section-title">Grade a Track</div>
+        <div class="section-sub">upload · analyse · confirm</div>
+      </div>
+
+      <!-- Cold-start progress card -->
+      <div id="cold-start-card" class="card card-accent-amber" style="display:none">
+        <div class="card-label">Cold-Start Mode — Building Training Set</div>
+        <div style="display:flex;align-items:center;gap:12px;margin-top:4px">
+          <div style="flex:1">
+            <div style="font-size:13px;color:var(--muted);font-family:var(--mono);margin-bottom:8px">
+              Rate <strong id="remaining-count" style="color:var(--amber)">5</strong> more tracks before AI predictions unlock.
+            </div>
+            <div class="cold-bar"><div class="cold-fill" id="cold-fill" style="width:0%"></div></div>
+          </div>
+          <div style="text-align:right;font-family:var(--mono);font-size:20px;font-weight:800;color:var(--amber)" id="cold-fraction">0/5</div>
+        </div>
+      </div>
+
+      <!-- Retrain banner (shown after save) -->
+      <div id="retrain-banner" class="retrain-banner" style="display:none">
+        <div>🔄 <span>Model retrained</span> after your last grade — accuracy improving.</div>
+        <div id="retrain-model" style="font-family:var(--mono);font-size:12px;color:var(--muted)"></div>
+      </div>
+
+      <!-- Drop zone -->
+      <div class="upload-zone" id="drop-zone">
+        <div class="upload-icon">🎶</div>
+        <div class="upload-text">Drop an audio file here</div>
+        <div class="upload-hint">mp3 · wav · flac · ogg · m4a · aac &nbsp;·&nbsp; first 30 s analysed</div>
+        <input type="file" id="file-input" accept=".mp3,.wav,.flac,.ogg,.m4a,.aac"/>
+      </div>
+
+      <!-- Score panel -->
+      <div class="score-panel" id="score-panel">
+        <div style="display:flex;align-items:center;gap:10px">
+          <div style="flex:1">
+            <div class="card-label">File</div>
+            <div class="score-file" id="sp-filename">—</div>
+          </div>
+          <div id="sp-spinner" class="spinner" style="display:none"></div>
+        </div>
+
+        <!-- AI prediction badge -->
+        <div class="ai-prediction-badge" id="ai-badge" style="display:none">
+          <div>
+            <div class="ai-pred-label">🤖 AI PREDICTION</div>
+            <div style="font-size:11px;color:var(--muted);font-family:var(--mono)" id="ai-model-label">—</div>
+          </div>
+          <div class="ai-pred-val" id="ai-pred-val">—</div>
+        </div>
+
+        <!-- Slider -->
+        <div>
+          <div style="display:flex;justify-content:space-between;align-items:baseline;margin-bottom:10px">
+            <div class="score-label" id="sp-slider-label">Your Rating</div>
+            <div class="score-value" id="sp-score-val">5.0</div>
+          </div>
+          <input type="range" id="score-slider" min="1" max="10" step="0.1" value="5"/>
+          <div style="display:flex;justify-content:space-between;margin-top:4px">
+            <div class="score-sub">1 — Poor</div>
+            <div class="score-sub">10 — Excellent</div>
+          </div>
+        </div>
+
+        <div class="btn-row">
+          <button class="btn btn-primary" id="btn-submit">Save Grade</button>
+          <button class="btn btn-ghost" id="btn-cancel">Cancel</button>
+        </div>
+      </div>
+
+      <!-- Feature readout (shown after grade) -->
+      <div id="feature-card" class="card" style="display:none">
+        <div class="chart-title">Extracted Audio Features (sample)</div>
+        <div class="feature-grid" id="feature-grid"></div>
+      </div>
+    </div>
+
+    <!-- ── OVERVIEW PAGE ── -->
+    <div class="page" id="page-overview">
+      <div class="section-head">
+        <div class="section-title">Dataset Overview</div>
+        <div class="section-sub" id="overview-sub">—</div>
+        <button class="refresh-btn" onclick="loadStatus()">↺ Refresh</button>
+      </div>
+
+      <div class="grid-3">
+        <div class="card card-accent-amber">
+          <div class="card-label">Total Graded</div>
+          <div class="card-value" id="stat-count">—</div>
+          <div class="card-sub">tracks in dataset</div>
+        </div>
+        <div class="card card-accent-teal">
+          <div class="card-label">Mean Score</div>
+          <div class="card-value" id="stat-mean">—</div>
+          <div class="card-sub" id="stat-std-sub">std —</div>
+        </div>
+        <div class="card card-accent-rose">
+          <div class="card-label">Score Range</div>
+          <div class="card-value" id="stat-range">—</div>
+          <div class="card-sub">min → max</div>
+        </div>
+      </div>
+
+      <div class="grid-2">
+        <div class="card">
+          <div class="chart-title">Score Distribution</div>
+          <div class="chart-wrap"><canvas id="chart-hist"></canvas></div>
+        </div>
+        <div class="card">
+          <div class="chart-title">Grade Sources</div>
+          <div class="chart-wrap"><canvas id="chart-sources"></canvas></div>
+        </div>
+      </div>
+
+      <div class="card">
+        <div class="chart-title">Score Timeline (last 30 grades)</div>
+        <div class="chart-wrap-tall"><canvas id="chart-timeline"></canvas></div>
+      </div>
+    </div>
+
+    <!-- ── MODELS PAGE ── -->
+    <div class="page" id="page-models">
+      <div class="section-head">
+        <div class="section-title">Model Performance</div>
+        <div class="section-sub" id="model-page-sub">last training run</div>
+        <button class="refresh-btn" onclick="loadModels()">↺ Refresh</button>
+      </div>
+
+      <div class="grid-3">
+        <div class="card card-accent-amber">
+          <div class="card-label">Active Model</div>
+          <div class="card-value" style="font-size:22px;line-height:1.3" id="active-model-name">—</div>
+          <div class="card-sub" id="active-model-time">—</div>
+        </div>
+        <div class="card card-accent-teal">
+          <div class="card-label">Best R²</div>
+          <div class="card-value" id="best-r2">—</div>
+          <div class="card-sub">higher = better fit</div>
+        </div>
+        <div class="card card-accent-blue">
+          <div class="card-label">Best MAE</div>
+          <div class="card-value" id="best-mae">—</div>
+          <div class="card-sub">mean absolute error</div>
+        </div>
+      </div>
+
+      <div class="card">
+        <div class="chart-title">Model Comparison — R² Score</div>
+        <div class="chart-wrap-tall"><canvas id="chart-models"></canvas></div>
+      </div>
+
+      <div class="card">
+        <div class="chart-title">Detailed Results</div>
+        <table class="model-table" id="model-table">
+          <thead>
+            <tr>
+              <th>Model</th>
+              <th>R² (CV)</th>
+              <th>±Std</th>
+              <th>MAE</th>
+              <th>Fit</th>
+            </tr>
+          </thead>
+          <tbody id="model-tbody"></tbody>
+        </table>
+        <div class="empty" id="model-empty" style="display:none">
+          <div class="empty-icon">🤖</div>
+          No training run yet — grade enough tracks to trigger training.
+        </div>
+      </div>
+
+      <div style="display:flex;gap:12px;align-items:center">
+        <button class="btn btn-primary" style="max-width:200px" onclick="forceRetrain()" id="btn-retrain">
+          Force Retrain
+        </button>
+        <div style="font-size:12px;color:var(--muted);font-family:var(--mono)" id="retrain-status"></div>
+      </div>
+    </div>
+
+    <!-- ── HISTORY PAGE ── -->
+    <div class="page" id="page-history">
+      <div class="section-head">
+        <div class="section-title">Grading History</div>
+        <div class="section-sub">last 50 entries</div>
+        <button class="refresh-btn" onclick="loadHistory()">↺ Refresh</button>
+      </div>
+      <div class="card">
+        <div class="history-scroll">
+          <table class="history-table">
+            <thead>
+              <tr>
+                <th>#</th>
+                <th>File</th>
+                <th>Final Score</th>
+                <th>AI Pred</th>
+                <th>Δ</th>
+                <th>Source</th>
+                <th>Time</th>
+              </tr>
+            </thead>
+            <tbody id="history-tbody"></tbody>
+          </table>
+          <div class="empty" id="history-empty">
+            <div class="empty-icon">🕘</div>
+            No grades yet. Upload a track to get started.
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- ── SETTINGS PAGE ── -->
+    <div class="page" id="page-settings">
+      <div class="section-head">
+        <div class="section-title">Settings</div>
+        <div class="section-sub">config.json values (read-only — edit the file to change)</div>
+      </div>
+      <div class="card">
+        <pre id="config-dump" style="font-family:var(--mono);font-size:12px;color:var(--muted);white-space:pre-wrap;line-height:1.8;"></pre>
+      </div>
+    </div>
+
+  </main>
+</div>
+
+<!-- Toast -->
+<div id="toast"></div>
+
+<script>
+// ══════════════════════════════════════════════════════════════════════
+//  CONFIG & STATE
+// ══════════════════════════════════════════════════════════════════════
+const API     = 'http://127.0.0.1:5050';
+const REFRESH = 5000;
+
+let charts      = {};
+let appConfig   = {};
+let currentFile = null;
+let aiPredicted = null;
+let autoRefreshId = null;
+
+// ══════════════════════════════════════════════════════════════════════
+//  NAVIGATION
+// ══════════════════════════════════════════════════════════════════════
+document.querySelectorAll('.nav-item').forEach(el => {
+  el.addEventListener('click', () => {
+    document.querySelectorAll('.nav-item').forEach(n => n.classList.remove('active'));
+    document.querySelectorAll('.page').forEach(p => p.classList.remove('active'));
+    el.classList.add('active');
+    const page = el.dataset.page;
+    document.getElementById(`page-${page}`).classList.add('active');
+    if (page === 'overview') { loadStatus(); }
+    if (page === 'models')   { loadModels(); }
+    if (page === 'history')  { loadHistory(); }
+    if (page === 'settings') { loadConfig(); }
+  });
+});
+
+// ══════════════════════════════════════════════════════════════════════
+//  TOAST
+// ══════════════════════════════════════════════════════════════════════
+function toast(msg, type='info', ms=3500) {
+  const t = document.getElementById('toast');
+  t.textContent = msg;
+  t.className = `show ${type}`;
+  clearTimeout(t._tid);
+  t._tid = setTimeout(() => { t.className = ''; }, ms);
+}
+
+// ══════════════════════════════════════════════════════════════════════
+//  API HELPERS
+// ══════════════════════════════════════════════════════════════════════
+async function apiFetch(path, opts={}) {
+  try {
+    const r = await fetch(API + path, opts);
+    return await r.json();
+  } catch(e) {
+    return { ok: false, error: e.message };
+  }
+}
+
+// ══════════════════════════════════════════════════════════════════════
+//  CONFIG
+// ══════════════════════════════════════════════════════════════════════
+async function loadConfig() {
+  const d = await apiFetch('/api/config');
+  if (!d.ok) return;
+  appConfig = d;
+  document.getElementById('config-dump').textContent = JSON.stringify(d, null, 2);
+  if (d.dbEnabled) {
+    const b = document.getElementById('db-badge');
+    b.textContent = `DB: ${d.dbType}`;
+    b.style.display = 'inline-block';
+  }
+  // Update slider range from config
+  const slider = document.getElementById('score-slider');
+  slider.min = d.scoreMin ?? 1;
+  slider.max = d.scoreMax ?? 10;
+}
+
+// ══════════════════════════════════════════════════════════════════════
+//  STATUS
+// ══════════════════════════════════════════════════════════════════════
+async function loadStatus() {
+  const d = await apiFetch('/api/status');
+  if (!d.ok) {
+    document.getElementById('status-text').textContent = 'offline';
+    return;
+  }
+
+  // Header badge
+  const statusEl = document.getElementById('header-status');
+  const textEl   = document.getElementById('status-text');
+  if (d.coldStart) {
+    statusEl.className = 'status-pill cold';
+    textEl.textContent = `cold-start · ${d.remaining} more`;
+  } else {
+    statusEl.className = 'status-pill';
+    textEl.textContent = `${d.model?.name ?? '—'} · ${d.stats?.count ?? 0} tracks`;
+  }
+
+  // Cold-start card
+  const csCard = document.getElementById('cold-start-card');
+  if (d.coldStart) {
+    csCard.style.display = 'block';
+    const min   = appConfig.minSamples ?? 5;
+    const have  = d.stats?.count ?? 0;
+    const pct   = Math.round((have / min) * 100);
+    document.getElementById('remaining-count').textContent = d.remaining;
+    document.getElementById('cold-fill').style.width = pct + '%';
+    document.getElementById('cold-fraction').textContent = `${have}/${min}`;
+  } else {
+    csCard.style.display = 'none';
+  }
+
+  // Nav badge
+  document.getElementById('nav-model-name').textContent = d.model?.name ?? '—';
+
+  if (!d.stats?.count) { return; }
+
+  // Overview stats
+  document.getElementById('stat-count').textContent  = d.stats.count;
+  document.getElementById('stat-mean').textContent   = d.stats.mean.toFixed(2);
+  document.getElementById('stat-std-sub').textContent = `std ${d.stats.std.toFixed(2)}`;
+  document.getElementById('stat-range').textContent  = `${d.stats.min.toFixed(1)}–${d.stats.max.toFixed(1)}`;
+  document.getElementById('overview-sub').textContent = `${d.stats.count} tracks graded`;
+
+  // Charts
+  renderHistogram(d.stats.histogram ?? []);
+  renderSources(d.stats.sources ?? {});
+}
+
+// ══════════════════════════════════════════════════════════════════════
+//  HISTORY
+// ══════════════════════════════════════════════════════════════════════
+async function loadHistory() {
+  const d = await apiFetch('/api/history');
+  if (!d.ok) return;
+
+  const rows   = d.history ?? [];
+  const tbody  = document.getElementById('history-tbody');
+  const empty  = document.getElementById('history-empty');
+  const navBadge = document.getElementById('nav-history-count');
+
+  navBadge.textContent = rows.length;
+
+  if (!rows.length) {
+    tbody.innerHTML = '';
+    empty.style.display = 'block';
+    return;
+  }
+  empty.style.display = 'none';
+
+  tbody.innerHTML = rows.map((r, i) => {
+    const fname  = r.filename ? r.filename.split(/[/\\]/).pop() : '—';
+    const fscore = r.final_score ?? r.score ?? '—';
+    const pred   = r.predicted_score != null ? r.predicted_score.toFixed(2) : '—';
+    const delta  = (r.predicted_score != null && r.final_score != null)
+                 ? (r.final_score - r.predicted_score) : null;
+    const dStr   = delta != null
+                 ? `<span class="delta ${delta >= 0 ? 'pos' : 'neg'}">${delta >= 0 ? '+' : ''}${delta.toFixed(2)}</span>`
+                 : '—';
+    const srcClass = r.source === 'human' ? 'src-human'
+                   : r.source === 'ai_accepted' ? 'src-ai'
+                   : 'src-corrected';
+    const ts = r.timestamp ? new Date(r.timestamp * 1000).toLocaleTimeString() : '—';
+    return `<tr>
+      <td style="color:var(--muted)">${i + 1}</td>
+      <td style="max-width:180px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap" title="${fname}">${fname}</td>
+      <td class="score-num">${typeof fscore === 'number' ? fscore.toFixed(2) : fscore}</td>
+      <td style="color:var(--blue)">${pred}</td>
+      <td>${dStr}</td>
+      <td class="${srcClass}">${r.source ?? '—'}</td>
+      <td style="color:var(--muted)">${ts}</td>
+    </tr>`;
+  }).join('');
+
+  // Timeline chart from history
+  renderTimeline(rows.slice(-30).reverse());
+}
+
+// ══════════════════════════════════════════════════════════════════════
+//  MODELS
+// ══════════════════════════════════════════════════════════════════════
+async function loadModels() {
+  const [statusD, modelsD] = await Promise.all([
+    apiFetch('/api/status'),
+    apiFetch('/api/models')
+  ]);
+
+  if (statusD.ok && statusD.model) {
+    document.getElementById('active-model-name').textContent = statusD.model.name;
+    document.getElementById('model-page-sub').textContent    = `${statusD.stats?.count ?? 0} training samples`;
+    if (statusD.model.trainedAt) {
+      document.getElementById('active-model-time').textContent =
+        'trained ' + new Date(statusD.model.trainedAt * 1000).toLocaleString();
+    }
+  }
+
+  const results = modelsD.results ?? {};
+  const keys    = Object.keys(results);
+
+  if (!keys.length) {
+    document.getElementById('model-empty').style.display = 'block';
+    document.getElementById('model-tbody').innerHTML = '';
+    return;
+  }
+  document.getElementById('model-empty').style.display = 'none';
+
+  // Best metrics
+  const best     = keys.filter(k => results[k].selected)[0];
+  const bestData = best ? results[best] : null;
+  document.getElementById('best-r2').textContent  = bestData ? bestData.r2.toFixed(4) : '—';
+  document.getElementById('best-mae').textContent = bestData ? bestData.mae.toFixed(4) : '—';
+
+  // Table
+  document.getElementById('model-tbody').innerHTML = keys.map(k => {
+    const r   = results[k];
+    const pct = r.ok ? Math.max(0, Math.min(100, r.r2 * 100)) : 0;
+    return `<tr class="${r.selected ? 'best' : ''}">
+      <td class="model-name">${k}${r.selected ? '<span class="badge-best">BEST</span>' : ''}${!r.ok ? '<span class="badge-fail">FAILED</span>' : ''}</td>
+      <td>
+        <div class="r2-bar-wrap">
+          <div class="r2-bar"><div class="r2-fill" style="width:${pct}%"></div></div>
+          <div class="r2-val">${r.ok ? r.r2.toFixed(4) : 'N/A'}</div>
+        </div>
+      </td>
+      <td style="font-family:var(--mono);font-size:12px">±${r.r2_std?.toFixed(4) ?? '—'}</td>
+      <td style="font-family:var(--mono);font-size:12px">${r.ok ? r.mae.toFixed(4) : 'N/A'}</td>
+      <td>
+        <div style="height:4px;width:60px;background:var(--border);border-radius:2px;overflow:hidden">
+          <div style="height:100%;width:${pct}%;background:${r.selected ? 'var(--amber)' : 'var(--teal)'};border-radius:2px"></div>
+        </div>
+      </td>
+    </tr>`;
+  }).join('');
+
+  // Bar chart
+  renderModelBars(results);
+}
+
+async function forceRetrain() {
+  const btn = document.getElementById('btn-retrain');
+  const st  = document.getElementById('retrain-status');
+  btn.disabled = true;
+  st.textContent = '🔄 retraining…';
+  const d = await apiFetch('/api/retrain', { method: 'POST' });
+  btn.disabled = false;
+  if (d.ok) {
+    toast(`Retrained → ${d.model}`, 'success');
+    st.textContent = `✓ ${d.model}`;
+    loadModels();
+  } else {
+    toast(d.error ?? 'Retrain failed', 'error');
+    st.textContent = '✗ failed';
+  }
+}
+
+// ══════════════════════════════════════════════════════════════════════
+//  CHART RENDERERS
+// ══════════════════════════════════════════════════════════════════════
+const CHART_DEFAULTS = {
+  plugins: { legend: { labels: { color: '#5a607a', font: { family: 'JetBrains Mono', size: 11 } } } },
+  scales: {
+    x: { ticks: { color: '#5a607a', font: { family: 'JetBrains Mono', size: 10 } }, grid: { color: '#1e2130' } },
+    y: { ticks: { color: '#5a607a', font: { family: 'JetBrains Mono', size: 10 } }, grid: { color: '#1e2130' } }
+  }
+};
+
+function mkChart(id, config) {
+  if (charts[id]) charts[id].destroy();
+  const ctx = document.getElementById(id)?.getContext('2d');
+  if (!ctx) return;
+  charts[id] = new Chart(ctx, config);
+}
+
+function renderHistogram(data) {
+  mkChart('chart-hist', {
+    type: 'bar',
+    data: {
+      labels: data.map(d => d.label),
+      datasets: [{ label: 'Tracks', data: data.map(d => d.count),
+        backgroundColor: 'rgba(245,166,35,0.6)', borderColor: '#f5a623',
+        borderWidth: 1, borderRadius: 4 }]
+    },
+    options: { ...CHART_DEFAULTS, responsive: true, maintainAspectRatio: false,
+      plugins: { ...CHART_DEFAULTS.plugins, legend: { display: false } } }
+  });
+}
+
+function renderSources(sources) {
+  const labels = Object.keys(sources);
+  const vals   = labels.map(k => sources[k]);
+  const colors = { human: '#f5a623', ai_accepted: '#00c9a7', human_corrected: '#ff4f6d' };
+  mkChart('chart-sources', {
+    type: 'doughnut',
+    data: {
+      labels,
+      datasets: [{ data: vals, backgroundColor: labels.map(l => colors[l] ?? '#4f8fff'),
+        borderColor: '#16181f', borderWidth: 3 }]
+    },
+    options: { responsive: true, maintainAspectRatio: false,
+      plugins: { legend: { labels: { color: '#5a607a', font: { family: 'JetBrains Mono', size: 11 } } } } }
+  });
+}
+
+function renderTimeline(rows) {
+  const labels = rows.map((_, i) => i + 1);
+  const finals = rows.map(r => r.final_score ?? r.score ?? null);
+  const preds  = rows.map(r => r.predicted_score ?? null);
+  mkChart('chart-timeline', {
+    type: 'line',
+    data: {
+      labels,
+      datasets: [
+        { label: 'Human/Final', data: finals, borderColor: '#f5a623', backgroundColor: 'rgba(245,166,35,0.08)',
+          tension: 0.3, fill: true, pointRadius: 4, pointBackgroundColor: '#f5a623' },
+        { label: 'AI Prediction', data: preds, borderColor: '#4f8fff', backgroundColor: 'transparent',
+          tension: 0.3, borderDash: [4,3], pointRadius: 3, pointBackgroundColor: '#4f8fff' }
+      ]
+    },
+    options: { ...CHART_DEFAULTS, responsive: true, maintainAspectRatio: false,
+      scales: { ...CHART_DEFAULTS.scales,
+        y: { ...CHART_DEFAULTS.scales.y, min: 1, max: 10 } } }
+  });
+}
+
+function renderModelBars(results) {
+  const keys   = Object.keys(results).filter(k => results[k].ok);
+  const r2vals = keys.map(k => results[k].r2);
+  const colors = keys.map(k => results[k].selected ? '#f5a623' : 'rgba(0,201,167,0.6)');
+  mkChart('chart-models', {
+    type: 'bar',
+    data: {
+      labels: keys,
+      datasets: [{ label: 'R² Score', data: r2vals, backgroundColor: colors,
+        borderColor: colors.map(c => c === '#f5a623' ? '#ff7c2a' : '#00c9a7'),
+        borderWidth: 1, borderRadius: 6 }]
+    },
+    options: { ...CHART_DEFAULTS, responsive: true, maintainAspectRatio: false,
+      indexAxis: 'y',
+      plugins: { ...CHART_DEFAULTS.plugins, legend: { display: false } },
+      scales: { ...CHART_DEFAULTS.scales,
+        x: { ...CHART_DEFAULTS.scales.x, min: -0.1, max: 1.05 } } }
+  });
+}
+
+// ══════════════════════════════════════════════════════════════════════
+//  FILE UPLOAD & GRADING
+// ══════════════════════════════════════════════════════════════════════
+const dropZone   = document.getElementById('drop-zone');
+const fileInput  = document.getElementById('file-input');
+const scorePanel = document.getElementById('score-panel');
+const slider     = document.getElementById('score-slider');
+const scoreVal   = document.getElementById('sp-score-val');
+
+dropZone.addEventListener('click', () => fileInput.click());
+dropZone.addEventListener('dragover', e => { e.preventDefault(); dropZone.classList.add('drag'); });
+dropZone.addEventListener('dragleave', ()  => dropZone.classList.remove('drag'));
+dropZone.addEventListener('drop', e => {
+  e.preventDefault(); dropZone.classList.remove('drag');
+  if (e.dataTransfer.files[0]) handleFile(e.dataTransfer.files[0]);
+});
+fileInput.addEventListener('change', () => { if (fileInput.files[0]) handleFile(fileInput.files[0]); });
+
+slider.addEventListener('input', () => {
+  const v = parseFloat(slider.value);
+  scoreVal.textContent = v.toFixed(1);
+  const pct = ((v - slider.min) / (slider.max - slider.min)) * 100;
+  slider.style.setProperty('--pct', pct + '%');
+});
+
+document.getElementById('btn-cancel').addEventListener('click', resetGradeUI);
+document.getElementById('btn-submit').addEventListener('click', submitGrade);
+
+function resetGradeUI() {
+  scorePanel.classList.remove('visible');
+  document.getElementById('feature-card').style.display = 'none';
+  document.getElementById('ai-badge').style.display = 'none';
+  document.getElementById('retrain-banner').style.display = 'none';
+  currentFile = null;
+  aiPredicted = null;
+  fileInput.value = '';
+}
+
+async function handleFile(file) {
+  currentFile = file;
+  aiPredicted = null;
+
+  document.getElementById('sp-filename').textContent = file.name;
+  document.getElementById('sp-spinner').style.display = 'inline-block';
+  document.getElementById('btn-submit').disabled = true;
+  document.getElementById('ai-badge').style.display = 'none';
+  document.getElementById('sp-slider-label').textContent = 'Your Rating';
+  scorePanel.classList.add('visible');
+
+  const fd = new FormData();
+  fd.append('file', file);
+  // Send without score to get prediction
+  const d = await apiFetch('/api/grade', { method: 'POST', body: fd });
+
+  document.getElementById('sp-spinner').style.display = 'none';
+  document.getElementById('btn-submit').disabled = false;
+
+  if (!d.ok) {
+    toast(d.error ?? 'Upload failed', 'error');
+    return;
+  }
+
+  if (d.coldStart) {
+    // Cold-start: just show slider for human rating
+    document.getElementById('sp-slider-label').textContent = 'Rate this track (training data needed)';
+    toast(`${d.remaining} more manual grade(s) needed to unlock AI`, 'info');
+    return;
+  }
+
+  if (d.awaitingConfirm) {
+    // AI gave a prediction
+    aiPredicted = d.predicted;
+    const badge = document.getElementById('ai-badge');
+    badge.style.display = 'flex';
+    document.getElementById('ai-pred-val').textContent = d.predicted.toFixed(2);
+    document.getElementById('ai-model-label').textContent = d.modelName;
+    document.getElementById('sp-slider-label').textContent = 'Accept AI score or override';
+
+    // Pre-set slider to AI prediction
+    slider.value = d.predicted;
+    scoreVal.textContent = d.predicted.toFixed(1);
+    const pct = ((d.predicted - slider.min) / (slider.max - slider.min)) * 100;
+    slider.style.setProperty('--pct', pct + '%');
+
+    // Show feature dump
+    if (d._featuresDump) renderFeatures(d._featuresDump);
+  }
+}
+
+async function submitGrade() {
+  if (!currentFile) return;
+
+  const btn   = document.getElementById('btn-submit');
+  btn.disabled = true;
+  btn.textContent = 'Saving…';
+
+  const score = parseFloat(slider.value);
+  const fd    = new FormData();
+  fd.append('file', currentFile);
+  fd.append('score', score.toString());
+
+  const d = await apiFetch('/api/grade', { method: 'POST', body: fd });
+  btn.disabled  = false;
+  btn.textContent = 'Save Grade';
+
+  if (!d.ok) {
+    toast(d.error ?? 'Save failed', 'error');
+    return;
+  }
+
+  if (d.retrained) {
+    const banner = document.getElementById('retrain-banner');
+    banner.style.display = 'flex';
+    document.getElementById('retrain-model').textContent = `→ ${d.modelName}`;
+    toast(`✓ Saved + model retrained (${d.modelName})`, 'success', 4000);
+  } else {
+    toast(`✓ Graded: ${score.toFixed(1)} / 10  (${d.source})`, 'success');
+  }
+
+  loadStatus();
+
+  // Keep panel open showing result; cancel resets it
+  document.getElementById('btn-submit').textContent = 'Grade Another';
+  document.getElementById('btn-submit').onclick = resetGradeUI;
+  document.getElementById('btn-submit').disabled = false;
+  fileInput.value = '';
+  currentFile = null;
+}
+
+function renderFeatures(feats) {
+  const card = document.getElementById('feature-card');
+  const grid = document.getElementById('feature-grid');
+  card.style.display = 'block';
+  grid.innerHTML = Object.entries(feats).map(([k, v]) =>
+    `<div class="feature-item"><span class="feature-key">${k}</span><span class="feature-val">${v}</span></div>`
+  ).join('');
+}
+
+// ══════════════════════════════════════════════════════════════════════
+//  BOOT
+// ══════════════════════════════════════════════════════════════════════
+async function boot() {
+  await loadConfig();
+  await loadStatus();
+
+  // Auto-refresh status
+  const interval = appConfig.dashboard?.auto_refresh_interval_ms ?? REFRESH;
+  autoRefreshId = setInterval(loadStatus, interval);
+}
+
+boot();
+</script>
+</body>
+</html>

@@ -1,0 +1,119 @@
+{
+  "_comment": "AI Music Grading System — Central Config. Edit here, never hardcode in .py or .html",
+
+  "system": {
+    "version": "2.0",
+    "name": "AI Music Grading System",
+    "data_file": "grading_dataset.csv",
+    "model_file": "best_model.pkl",
+    "history_file": "session_history.json",
+    "upload_folder": "uploads",
+    "allowed_extensions": ["mp3", "wav", "flac", "ogg", "m4a", "aac"],
+    "audio_load_duration_seconds": 30,
+    "flask_host": "127.0.0.1",
+    "flask_port": 5050,
+    "flask_debug": false
+  },
+
+  "grading": {
+    "score_min": 1.0,
+    "score_max": 10.0,
+    "score_step": 0.1
+  },
+
+  "training": {
+    "min_samples_to_train": 5,
+    "retrain_after_every_n_grades": 1,
+    "cv_folds": 5,
+    "cv_min_samples": 10,
+    "model_selection_metric": "r2"
+  },
+
+  "models": {
+    "RandomForest": {
+      "enabled": true,
+      "n_estimators": 200,
+      "random_state": 42,
+      "n_jobs": -1
+    },
+    "GradientBoosting": {
+      "enabled": true,
+      "n_estimators": 200,
+      "learning_rate": 0.05,
+      "max_depth": 4,
+      "random_state": 42
+    },
+    "ExtraTrees": {
+      "enabled": true,
+      "n_estimators": 200,
+      "random_state": 42,
+      "n_jobs": -1
+    },
+    "SVR": {
+      "enabled": true,
+      "kernel": "rbf",
+      "C": 10,
+      "epsilon": 0.2
+    },
+    "NeuralNet": {
+      "enabled": true,
+      "hidden_layer_sizes": [128, 64, 32],
+      "max_iter": 500,
+      "learning_rate_init": 0.001,
+      "random_state": 42,
+      "early_stopping": true,
+      "validation_fraction": 0.15
+    }
+  },
+
+  "features": {
+    "n_mfcc": 13,
+    "include_chroma": true,
+    "include_tonnetz": true,
+    "include_spectral_contrast": true,
+    "include_mel_summary": true,
+    "include_tempo": true,
+    "include_zcr": true,
+    "include_rms": true
+  },
+
+  "database": {
+    "_comment": "SQL / Snowflake standby — set enabled=true and fill credentials to activate",
+    "enabled": false,
+    "type": "snowflake",
+    "snowflake": {
+      "account": "YOUR_ACCOUNT",
+      "user": "YOUR_USER",
+      "password": "YOUR_PASSWORD",
+      "database": "MUSIC_GRADER_DB",
+      "schema": "PUBLIC",
+      "warehouse": "COMPUTE_WH",
+      "role": "SYSADMIN",
+      "table_grades": "GRADED_TRACKS",
+      "table_models": "MODEL_PERFORMANCE"
+    },
+    "sqlite": {
+      "path": "music_grader.db",
+      "table_grades": "graded_tracks",
+      "table_models": "model_performance"
+    },
+    "postgres": {
+      "host": "localhost",
+      "port": 5432,
+      "dbname": "music_grader",
+      "user": "postgres",
+      "password": "YOUR_PASSWORD",
+      "table_grades": "graded_tracks",
+      "table_models": "model_performance"
+    }
+  },
+
+  "dashboard": {
+    "title": "Music Grading AI",
+    "subtitle": "Self-improving audio intelligence",
+    "theme": "dark",
+    "chart_animation_ms": 800,
+    "history_max_rows": 50,
+    "auto_refresh_interval_ms": 5000
+  }
+}
